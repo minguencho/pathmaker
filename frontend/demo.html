@@ -11,32 +11,267 @@
         margin: 0;
         padding: 0;
       }
-
       #map {
         position: absolute;
         top: 0;
         bottom: 0;
         width: 100%;
       }
+      #send-button {
+        position: absolute;
+        top: 200px;
+        right: 10px;
+        padding: 10px;
+        background-color: #fff;
+        border: 1px solid #999;
+        font-family: 'Open Sans', sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      #select-destination-button {
+        position: absolute;
+        top: 150px;
+        right: 10px;
+        padding: 10px;
+        background-color: #fff;
+        border: 1px solid #999;
+        font-family: 'Open Sans', sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      #complete-button {
+        position: absolute;
+        top: 200px;
+        right: 10px;
+        padding: 10px;
+        background-color: #fff;
+        border: 1px solid #999;
+        font-family: 'Open Sans', sans-serif;
+        font-size: 14px;
+        cursor: pointer;
+      }
+
+      .mapboxgl-ctrl-group {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+      }
+      
+      .mapboxgl-ctrl-group > button {
+        margin-bottom: 10px;
+      }
+      
     </style>
 </head>
 <body>
 
 <div id='map'></div>
+<button id="select-destination-button">목적지 선택</button>
+<button id="complete-button">설정 완료</button>
 
 <script>
+  var BC_latitude = '{{ lat }}'
+  var BC_longitude = '{{ lng }}'
+  var lngLat
+  var service_able_waypoint = JSON.parse('{{ service_able_waypoint }}')
+  var waypoint
+  var routes_return
+  mapboxgl.accessToken = 'pk.eyJ1IjoibWluZ3VlbmNobyIsImEiOiJjbGdveW1sNjMwaGhuM3NxbTIxdWs1b3N2In0.6Zgzs_gXXFCRY5oVK_Ziww';
 
-mapboxgl.accessToken = 'pk.eyJ1IjoibWluZ3VlbmNobyIsImEiOiJjbGdveW1sNjMwaGhuM3NxbTIxdWs1b3N2In0.6Zgzs_gXXFCRY5oVK_Ziww';
+  const map = new mapboxgl.Map({
+        container: 'map',
+        style: 'mapbox://styles/mapbox/light-v11',
+        center: [128.097068, 35.153685],
+        zoom :14
+  });
+  
+  // NavigationControl을 추가하여 우측 상단에 제어 요소를 만듭니다.
+  const nav = new mapboxgl.NavigationControl();
+  map.addControl(nav, 'top-right');
 
-const map = new mapboxgl.Map({
-  container: 'map',
-  style: 'mapbox://styles/mapbox/light-v11',
-  center: [128.097068, 35.153685],
-  zoom: 16
-});
 
-// code from the next step will go here!
+  const marker = new mapboxgl.Marker({
+        color: "#FF0000"}
+        )
+        .setLngLat([BC_longitude, BC_latitude])
+        .setPopup(new mapboxgl.Popup().setHTML("<h1>BaseCamp</h1>"))
+        .addTo(map);
+  map.on('load', function() {
+    console.log("draw circle")
+    var i = 0;
+    // 이전에 생성된 circle-layer 레이어가 있다면 제거
+    if (map.getLayer("circle-layer"+i)) {
+      map.removeLayer("circle-layer"+i);
+    }
 
-</script>
+    for (var i = 0; i < service_able_waypoint.length; i++) {
+      var waypoint = service_able_waypoint[i];
+      var radius = 100; // 반지름(미터 단위)
+      var service_marker = new mapboxgl.Marker()
+        .setLngLat([waypoint[1],waypoint[0]])
+        .setPopup(new mapboxgl.Popup().setHTML("<h1>service zone</h1>"))
+        .addTo(map);
 
+      // 원을 나타내는 source를 생성
+      var circleSource = {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [{
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: waypoint
+            },
+            properties: {} // 이 줄을 추가해주세요.
+          }]
+        }
+      };
+
+      // 원을 나타내는 layer를 추가
+      map.addLayer({
+        id: 'circle-layer'+i,
+        type: 'circle',
+        source: circleSource,
+        paint: {
+          'circle-radius': {
+            stops: [[0, 0], [20, (radius / 0.075)]] // 미터 단위를 픽셀 단위로 변환
+          },
+          'circle-color': '#007cbf', // 원의 색상
+          'circle-opacity': 0.5 // 원의 투명도
+        }
+      });
+      if (map.getLayer("circle-layer"+i)) {
+        console.log("circle layer exists"+i);
+      } else {
+        console.log("circle layer does not exist");
+      }
+      }
+    
+  });
+
+
+  
+  let isSelectingDefinition = false;
+
+  function onMapClick(e) {
+    // 클릭한 위치의 좌표 정보 가져오기
+    if (isSelectingDefinition) {
+      lngLat = e.lngLat;
+      console.log('Clicked at: ' + lngLat.lng + ', ' + lngLat.lat);
+      confirmAction();
+    }
+  }
+
+  document.getElementById('select-destination-button').addEventListener('click', function() {
+    if (!isSelectingDefinition) {
+      map.getCanvas().style.cursor = 'crosshair';
+      isSelectingDefinition = true;
+      map.on('click', onMapClick);
+    }
+  });
+  document.getElementById('complete-button').addEventListener('click', function() {
+    fetch('/generate_MF', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: {}
+    })
+    .catch(error => console.error(error));
+    console.log("complete generate mission file")
+  });
+
+  function confirmAction() {
+    if (typeof lngLat !== 'undefined') {
+      const confirmation = confirm("선택한 좌표값을 전송하시겠습니까?");
+      if (confirmation) {
+        const data = lngLat;
+        const Newmarker = new mapboxgl.Marker()
+        .setLngLat(lngLat)
+        .setPopup(new mapboxgl.Popup()
+        .setHTML("<h1>Destination</h1>")).addTo(map);
+        fetch('/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        })
+        .then(response => {
+        console.log(response.status);
+        return response.json();
+        })
+        .then(data => {
+          console.log(data);
+          return data.routes;
+        })
+        .then(routes => {
+          routes_return = routes;
+          // routes_return이 존재하는 경우 경로를 그려줍니다.
+          if (routes_return.length > 0) {
+            drawRoute(routes_return)
+            /*for (var i = 0; i < routes_return.length; i++) {
+                drawRoute(routes_return[i]);
+            }*/
+          }
+        })
+        .catch(error => {
+        console.error(error);
+        })
+        .finally(() => {
+          // 선택 모드를 끝내고 목적지 선택 버튼을 다시 활성화
+          isSelectingDefinition = false;
+          map.getCanvas().style.cursor = '';
+        });
+      } else {
+        console.log('취소되었습니다.');
+        // 선택 모드를 유지하고 목적지 선택 버튼을 비활성화
+        map.getCanvas().style.cursor = 'crosshair';
+      }
+    } else if (isSelectingDefinition) {
+      console.log('선택한 좌표값이 없습니다.');
+    }
+  }
+  function drawRoute(route) {
+    var coordinates = [];
+    for (var i = 0; i < route.length; i++) {
+      // 위도와 경도의 순서 변경
+      var link = route[i];
+      node1lat = link[0][0]
+      node1lon = link[0][1]
+      node2lat = link[1][0]
+      node2lon = link[1][1]
+      node1 = [node1lon,node1lat]
+      node2 = [node2lon,node2lat]
+      coordinates.push(node1);
+      coordinates.push(node2);
+    }
+    console.log(coordinates)
+    coordinates = [...new Set(coordinates.map(JSON.stringify))].map(JSON.parse);
+    console.log(coordinates)
+    var line = {
+      'type': 'Feature',
+      'geometry': {
+        'type': 'LineString',
+        'coordinates': coordinates
+      }
+    };
+    new mapboxgl.Marker().setLngLat(coordinates[coordinates.length - 1]).addTo(map);
+    map.addLayer({
+      'id': 'line_layer',
+      'type': 'line',
+      'source': {
+        'type': 'geojson',
+        'data': line
+      },
+      'paint': {
+        'line-color': '#ff0000',
+        'line-width': 4
+      }
+    });
+  }
+  </script>
 </body>
+</html>
